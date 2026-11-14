@@ -121,8 +121,8 @@ Priority is stored with a numeric rank for sorting: `low` = 0, `normal` = 1, `ur
 | `runtime_used_secs` | `int` NOT NULL | Default 0 |
 | `best_model_id` | `text` NULL | |
 | `best_metric` | `jsonb` NULL | `{"name": "auc", "value": 0.91}` |
-| `leaderboard_key` | `text` NULL | MinIO key, set on success |
-| `model_key` | `text` NULL | MinIO key of the best MOJO |
+| `leaderboard_key` | `text` NULL | Object storage key, set on success |
+| `model_key` | `text` NULL | Object storage key of the best MOJO |
 | `error` | `text` NULL | Set on `FAILED` |
 | `submitted_at` | `timestamptz` NOT NULL | Never changes (queue order) |
 | `first_started_at` | `timestamptz` NULL | |
@@ -286,5 +286,5 @@ The Go state machine checks the same rules first, so the trigger should never fi
 |---|---|
 | Jobs, attempts, transitions, models index | Forever (v1) |
 | Outbox (published), processed events | 7 days |
-| Checkpoint files in MinIO | 7 days after final state |
+| Checkpoint files in object storage | 7 days after final state |
 | Audit log | Forever. Never deleted |

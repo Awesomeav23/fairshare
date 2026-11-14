@@ -20,7 +20,7 @@ flowchart LR
         FS[fairshared<br/>Go]
         PG[(Postgres)]
         MQ[[RabbitMQ]]
-        S3[(MinIO)]
+        S3[(SeaweedFS<br/>S3 API)]
     end
 
     subgraph jobs[namespace: fairshare-jobs]
@@ -59,7 +59,7 @@ flowchart LR
 | **web** | React + TS | Static files served by nginx | UI for members, admins, auditors |
 | **Postgres** | — | StatefulSet | Tenants, users, datasets, jobs, outbox, audit |
 | **RabbitMQ** | — | StatefulSet | Durable event delivery |
-| **MinIO** | — | StatefulSet | Datasets, checkpoints, results |
+| **SeaweedFS** | — | StatefulSet | S3-compatible object storage: datasets, checkpoints, results ([ADR-0006](adr/0006-seaweedfs-object-storage.md)) |
 
 ---
 
@@ -99,7 +99,7 @@ One Go binary, split into modules with clear boundaries.
 ## 4. Kubernetes layout
 
 ### Namespaces
-- `fairshare-system`: fairshared, web, Postgres, RabbitMQ, MinIO.
+- `fairshare-system`: fairshared, web, Postgres, RabbitMQ, SeaweedFS.
 - `fairshare-jobs`: per-job resources only.
 
 ### Per job attempt
@@ -163,7 +163,7 @@ Each start or resume is a new **attempt** (1, 2, 3…). Resources are named per 
 
 ## 6. Runner
 
-One Python process per job attempt. Libraries: `h2o`, `pika` (RabbitMQ), `boto3` (MinIO).
+One Python process per job attempt. Libraries: `h2o`, `pika` (RabbitMQ), `boto3` (S3).
 
 ### Normal run
 1. **Find the leader:** for each pod `job-<id>-a<n>-h2o-<i>.<discovery service>`, call `:8080/kubernetes/isLeaderNode`. On the pod that answers 200, check `:54321/3/Cloud` until `cloud_size` = expected node count. Connect to that pod. Give up after 4 min.
@@ -175,12 +175,12 @@ One Python process per job attempt. Libraries: `h2o`, `pika` (RabbitMQ), `boto3`
    - `max_runtime_secs` = requested − runtime already used
    - StackedEnsemble excluded, so every saved model is independent. XGBoost isn't available on ARM64 or multi-node clusters (SPIKE_RESULTS F6)
 5. A background thread polls the leaderboard every 5 s. For each new model:
-   - save the model binary to MinIO
+   - save the model binary to object storage
    - send `runner.model_saved`
 6. When AutoML ends:
    - build the combined leaderboard (checkpointed + new models)
    - export the best model as a MOJO
-   - upload both to MinIO
+   - upload both to object storage
    - send `runner.finished`
 
 ### On SIGTERM (preemption or cancel)
@@ -204,7 +204,7 @@ Measured: 0.3 s normally, 0.7 s with H2O already dead.
 
 ---
 
-## 7. Object storage layout (MinIO)
+## 7. Object storage layout (SeaweedFS, S3 API)
 
 | Bucket | Path | Written by |
 |---|---|---|
@@ -215,8 +215,8 @@ Measured: 0.3 s normally, 0.7 s with H2O already dead.
 | `results` | `<job_id>/best_model.zip` (MOJO) | runner |
 
 - Checkpoints are deleted 7 days after a job reaches a final state.
-- Users never access MinIO directly. fairshared streams uploads and downloads after checking permissions.
-- **Credentials:** fairshared and runners use separate MinIO users.
+- Users never access object storage directly. fairshared streams uploads and downloads after checking permissions.
+- **Credentials:** fairshared and runners use separate S3 identities (SeaweedFS `s3.json` config, per-bucket actions).
   - Runner user: read `datasets`, read/write `checkpoints` and `results`. No delete.
   - Not in v1: per-job credentials scoped to one job's paths.
 
@@ -231,7 +231,7 @@ Runs every 30 s on the leader. For each non-final job, compare the expected and 
 | `PROVISIONING` for > 2 min | no resources | Re-emit `job.provision` |
 | `RUNNING` | runner Pod `Failed` or missing | Attempt failed → [JOB_LIFECYCLE](JOB_LIFECYCLE.md) retry rules |
 | `PROVISIONING` / `RUNNING` | any H2O pod has `restartCount > 0` or is in `CrashLoopBackOff` | H2O cloud is broken → delete attempt → attempt failed. **Readiness is ignored**: a restarted leader looks Ready |
-| `CHECKPOINTING` for > 90 s | runner gone, no `checkpointed` event | Use the last manifest in MinIO → `PREEMPTED` |
+| `CHECKPOINTING` for > 90 s | runner gone, no `checkpointed` event | Use the last manifest in object storage → `PREEMPTED` |
 | final state | resources still exist | Delete them (orphans) |
 | *(no job)* | resources with Fairshare labels | Delete them |
 
@@ -243,7 +243,7 @@ Runs every 30 s on the leader. For each non-final job, compare the expected and 
 ## 9. Security
 
 - **Tokens:** random 32 bytes, shown once, stored as SHA-256.
-- **Secrets:** DB, RabbitMQ and MinIO credentials live in Kubernetes Secrets, never in images or Git.
+- **Secrets:** DB, RabbitMQ and S3 credentials live in Kubernetes Secrets, never in images or Git.
 - **Least privilege:**
   - fairshared's Kubernetes rights are limited to `fairshare-jobs` (§4).
   - Runners have no Kubernetes API access (`automountServiceAccountToken: false`).
@@ -258,7 +258,7 @@ Runs every 30 s on the leader. For each non-final job, compare the expected and 
 Two modes.
 
 ### Dev mode (Phases 1–7)
-- Postgres, RabbitMQ and MinIO run in Docker Compose.
+- Postgres, RabbitMQ and SeaweedFS run in Docker Compose.
 - fairshared runs on the host and uses your kubeconfig to reach kind.
 - Vite dev server for the UI.
 
@@ -268,7 +268,7 @@ Two modes.
 | fairshared API | 8030 |
 | Vite | 5200 |
 | RabbitMQ (AMQP / UI) | 5672 / 15672 |
-| MinIO (API / console) | 9000 / 9001 |
+| SeaweedFS (S3 API / filer UI) | 9000 / 9001 |
 
 - Runner pods inside kind reach host services through `host.docker.internal`.
 
@@ -277,7 +277,8 @@ Two modes.
 - This is what CI and the one-command install use.
 
 ### Prerequisites to install
-- Docker Desktop (running), Go, Helm. kind, kubectl, Python and Java are already present.
+- Docker Desktop running with **10 GB** memory (Settings → Resources). Stop other kind clusters (e.g. `canary`) while working on Fairshare.
+- Go, Helm. kind, kubectl, Python and Java are already present.
 
 ---
 
@@ -314,8 +315,8 @@ All are libraries for JD-stack languages.
 | Go migrations | `golang-migrate` |
 | Go Kubernetes | `client-go` |
 | Go RabbitMQ | `amqp091-go` |
-| Go MinIO | `minio-go` |
+| Go S3 | `aws-sdk-go-v2` (S3 client, custom endpoint) |
 | Python H2O | `h2o` |
 | Python RabbitMQ | `pika` |
-| Python MinIO | `boto3` |
+| Python S3 | `boto3` |
 | Web | React, TypeScript, Vite, TanStack Query |

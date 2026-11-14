@@ -50,7 +50,7 @@ A **tenant** is a team (e.g. fraud, marketing, risk).
 
 | Concept | Meaning |
 |---|---|
-| **Slot** | Unit of cluster capacity. 1 slot = 1 CPU + 2 GB memory. |
+| **Slot** | Unit of cluster capacity. 1 slot = 1 CPU + 1.5 GiB memory. |
 | **Cluster capacity** | Total slots Fairshare may use. Configurable. Local default: **4**. |
 | **Job size** | `small` = 1 slot, `medium` = 2, `large` = 4. One H2O pod per slot. |
 | **Weight** | A tenant's fair share. Share = tenant weight ÷ sum of weights of tenants with work. |
@@ -87,7 +87,7 @@ A **tenant** is a team (e.g. fraud, marketing, risk).
 ## 6. Scope
 
 ### In scope (v1)
-- Datasets: CSV upload, stored in MinIO, tenant-isolated.
+- Datasets: CSV upload, stored in object storage (SeaweedFS), tenant-isolated.
 - Jobs: H2O-3 AutoML on a per-job H2O cluster on Kubernetes.
 - Weighted fair-share scheduling on **current** slot usage.
 - Priorities, preemption, per-model checkpoint and resume.
@@ -136,7 +136,7 @@ A **tenant** is a team (e.g. fraud, marketing, risk).
 - **FR-8** Each tenant may have at most **1 urgent job** pending or running at a time.
 - **FR-9** States and transitions follow [JOB_LIFECYCLE](JOB_LIFECYCLE.md). Illegal transitions are rejected.
 - **FR-10** Each waiting job shows a reason, e.g. "waiting for 2 free slots" or "tenant at max slots".
-- **FR-11** On success, store the leaderboard and the best model (MOJO) in MinIO.
+- **FR-11** On success, store the leaderboard and the best model (MOJO) in object storage.
 - **FR-12** Cancelling a running job stops it within **60 s** and frees its slots.
 
 ### Scheduling and preemption
@@ -169,9 +169,9 @@ A **tenant** is a team (e.g. fraud, marketing, risk).
 | **NFR-2** | When slots free up, the next job is scheduled within **5 s**. |
 | **NFR-3** | A preempted job's checkpoint finishes within the **60 s** shutdown grace period. |
 | **NFR-4** | A dead H2O pod or runner is detected and the job is handled within **60 s**. |
-| **NFR-5** | Fits on a 16 GB laptop: 4 slots (8 GB) plus support services. |
+| **NFR-5** | Fits on a 16 GB laptop with Docker Desktop at 10 GB: 4 slots (6 GiB) plus kind and support services. |
 | **NFR-6** | All container images run as non-root and are built for x86 and ARM. |
-| **NFR-7** | Only the JD stack: Go, Python, Java, React + TS, H2O-3, Kubernetes, Docker, Helm, Postgres, MinIO, RabbitMQ, GitHub Actions, Jenkins — plus libraries for those languages. |
+| **NFR-7** | Only the JD stack: Go, Python, Java, React + TS, H2O-3, Kubernetes, Docker, Helm, Postgres, S3-compatible object storage (SeaweedFS), RabbitMQ, GitHub Actions, Jenkins — plus libraries for those languages. |
 | **NFR-8** | One command takes a clean machine to a running system on kind. |
 
 ---
@@ -199,12 +199,12 @@ Fairshare v1 is done when all five pass.
 
 ## 10. Constraints
 
-- **Local only:** kind on a 16 GB Mac (10 CPUs).
+- **Local only:** kind on a 16 GB Mac (10 CPUs), Docker Desktop memory set to 10 GB.
 - **Tech:** NFR-7 list only. No Prometheus, Grafana, Trivy, etc.
-- **Assumptions confirmed by Phase 0 spikes:**
+- **Assumptions confirmed by Phase 0 spikes** ([SPIKE_RESULTS](SPIKE_RESULTS.md)):
   - Multi-pod H2O-3 clusters form on kind via a headless Service.
-  - Finished AutoML models can be saved to MinIO and loaded into a new H2O cluster.
-  - If a spike fails, this spec changes before Phase 1.
+  - Finished AutoML models can be saved to object storage and loaded into a new H2O cluster.
+  - Both confirmed on 2026-11-14.
 
 ---
 
@@ -213,10 +213,13 @@ Fairshare v1 is done when all five pass.
 | ID | Decision | Why |
 |---|---|---|
 | D-01 | Quotas in **slots** | Simple fairness math, easy to show in the UI |
-| D-02 | **CSV upload** to MinIO | Realistic, tenant-isolated |
+| D-02 | **CSV upload** to object storage | Realistic, tenant-isolated |
 | D-03 | **API tokens** for auth | Keeps the effort on the scheduler |
 | D-04 | Fairness on **current** usage | Easy to reason about and test |
 | D-05 | **Postgres is the source of truth**; controller drives Kubernetes | One source of truth for crash-safety ([ADR-0001](adr/0001-postgres-source-of-truth.md)) |
 | D-06 | **Local kind** only | Cloud deferred to keep scope manageable |
 | D-07 | Checkpoint **per finished model** | H2O AutoML can't pause mid-run |
 | D-08 | Preemption deletes the **whole H2O cluster** | H2O-3 clusters can't shrink |
+| D-09 | **SeaweedFS** for object storage | MinIO images no longer published ([ADR-0006](adr/0006-seaweedfs-object-storage.md)) |
+| D-10 | Slot = **1 CPU + 1.5 GiB**, capacity 4, Docker Desktop at 10 GB | Docker had 7.6 GB; 1.5 GiB proven in Spike C |
+| D-11 | Runner downloads the CSV, then `upload_file` into H2O | Simplest; proven in Spike C |

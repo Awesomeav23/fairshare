@@ -9,7 +9,7 @@
 
 ## Decision
 - The unit of saved work is **one finished model**.
-- The runner saves each model to MinIO as soon as it appears on the leaderboard and records it in `job_models`.
+- The runner saves each model to object storage as soon as it appears on the leaderboard and records it in `job_models`.
 - On resume, the runner loads saved models and runs AutoML only for the **remaining** model count and runtime.
 - The final leaderboard combines loaded and new models.
 

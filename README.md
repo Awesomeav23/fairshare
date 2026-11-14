@@ -6,7 +6,7 @@ Several teams share one cluster. Fairshare decides whose job runs next, enforces
 
 ## Status
 
-**Phase 0: design and spikes.** No application code yet.
+**Phase 0 complete:** design docs written, risky assumptions tested in spikes. Next: Phase 1 (skeleton).
 
 ## Design docs
 
@@ -28,7 +28,7 @@ Several teams share one cluster. Fairshare decides whose job runs next, enforces
 | Controller + API | Go |
 | Training runners | Python, H2O-3 AutoML |
 | UI | React + TypeScript |
-| Data | PostgreSQL, MinIO (S3-compatible object storage), RabbitMQ |
+| Data | PostgreSQL, SeaweedFS (S3-compatible object storage), RabbitMQ |
 | Platform | Docker, Kubernetes (kind), Helm |
 | CI/CD | GitHub Actions, Jenkins |
 

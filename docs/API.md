@@ -55,7 +55,7 @@ Roles: **A** = admin, **M** = tenant-member (own tenant only), **Au** = auditor.
 | Method | Path | Roles | Purpose |
 |---|---|---|---|
 | GET | `/healthz` | none | Process is up |
-| GET | `/readyz` | none | Postgres, RabbitMQ, MinIO reachable |
+| GET | `/readyz` | none | Postgres, RabbitMQ, object storage reachable |
 | GET | `/me` | A M Au | Current user, role, tenant |
 | GET | `/tenants` | A Au | List tenants |
 | POST | `/tenants` | A | Create tenant |

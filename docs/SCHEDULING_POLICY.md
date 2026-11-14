@@ -205,7 +205,7 @@ Every queued job shows one reason, updated each tick.
 | Setting | Default | Notes |
 |---|---|---|
 | `capacity_slots` | 4 | Must match the ResourceQuota |
-| `slot_cpu` / `slot_memory` | 1 / 2 GiB | Per H2O pod |
+| `slot_cpu` / `slot_memory` | 1 / 1.5 GiB | Per H2O pod. Heap = 60% (SPIKE_RESULTS F5) |
 | `tick_interval` | 2 s | |
 | `reservation_after` | 10 min | |
 | `max_preemptions_per_job` | 2 | |

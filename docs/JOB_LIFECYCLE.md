@@ -94,7 +94,7 @@ Anything not in this table is rejected.
 - Kubernetes resources are named per attempt: `job-<id>-a<n>-…`.
 - Every runner event carries `job_id` **and** `attempt`.
 - **Stale event rule:** an event whose attempt is not the job's current attempt is acknowledged and ignored. Example: a late `model_saved` from attempt 1 arrives after attempt 2 started.
-  - Exception: a stale `runner.model_saved` still records the model in `job_models`, because the file really is in MinIO. Saved work is never thrown away.
+  - Exception: a stale `runner.model_saved` still records the model in `job_models`, because the file really is in object storage. Saved work is never thrown away.
 
 ### Attempt end reasons
 | Reason | Set by |
@@ -161,7 +161,7 @@ Fields on `jobs`, updated by runner events:
 | State | Timeout | On timeout |
 |---|---|---|
 | `PROVISIONING` | 5 min | Retryable failure (T10/T11) |
-| `CHECKPOINTING` | 90 s | T6b: use the last manifest in MinIO, go to `PREEMPTED` |
+| `CHECKPOINTING` | 90 s | T6b: use the last manifest in object storage, go to `PREEMPTED` |
 | `CANCELLING` | 90 s | Force-delete resources (grace period 0), then T9 |
 
 All timeouts are checked by the reconciler.

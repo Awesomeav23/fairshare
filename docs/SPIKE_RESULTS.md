@@ -14,7 +14,7 @@
 | **B** | Can finished models be saved, loaded into a *new* cluster, and AutoML continue without redoing work? | ✅ All three checks pass, including skipping finished steps with `modeling_plan` |
 | **C** | Can a runner pod drive AutoML in-cluster and checkpoint on SIGTERM inside the grace period? | ✅ `checkpointed` **0.3 s** after SIGTERM; **0.7 s** even when H2O is already dead |
 
-Both pending ADRs are now **validated**. Nine findings change the design. Three need a decision (§5).
+Both pending ADRs are now **validated**. Nine findings change the design. Three decisions (§5) were **accepted on 2026-11-14**.
 
 ---
 
@@ -109,15 +109,16 @@ Both pending ADRs are now **validated**. Nine findings change the design. Three 
 
 ---
 
-## 5. Decisions needed
+## 5. Decisions (all accepted 2026-11-14)
 
-### D1. Object storage: MinIO is no longer available
+### D1. Object storage: MinIO is no longer available → **SeaweedFS** ✅
 - `minio/minio` no longer exists on Docker Hub; `quay.io/minio/minio` requires authorization; Bitnami's image is gone.
 - **Spike used SeaweedFS** (`chrislusf/seaweedfs`, Apache-2.0, ARM64, single container `server -s3`). boto3 worked unchanged.
 - **Recommendation:** replace MinIO with **SeaweedFS** everywhere (dev Compose, Helm chart, docs). The code talks plain S3 API, so this is a config change, and AWS S3 still works later.
-- Go client: `minio-go` works against any S3 API, or use `aws-sdk-go-v2`.
+- Go client: `aws-sdk-go-v2`.
+- Recorded in [ADR-0006](adr/0006-seaweedfs-object-storage.md).
 
-### D2. Slot memory and local capacity
+### D2. Slot memory and local capacity → **Option A** ✅
 - The design assumed 4 slots × 2 GiB = 8 GiB. **Docker Desktop has 7.6 GiB in total**, and the `canary` kind cluster already uses ~2–2.8 GiB.
 - Spike evidence: 1.5 GiB per H2O pod with 60% heap trained on 60k rows fine.
 
@@ -127,7 +128,7 @@ Both pending ADRs are now **validated**. Nine findings change the design. Three 
 | B | 1 CPU + 1.5 GiB | 2 (3 GiB) | Nothing. But `large` (4 slots) can't run locally, so demo scenario 1 must use `medium` |
 | C | 1 CPU + 2 GiB | 4 (8 GiB) | Docker Desktop at **12 GB+**; tight on a 16 GB Mac |
 
-### D3. Dataset path into H2O
+### D3. Dataset path into H2O → **download then upload** ✅
 - Spike: runner downloads the CSV from S3, then `h2o.upload_file` (client → server). Works well up to the 100 MB limit.
 - Alternative: H2O reads S3 directly (`import_file("s3://…")`), which needs H2O's S3 settings pointed at a custom endpoint.
 - **Recommendation:** keep the download-then-upload approach for v1. Simpler, and it's already proven.
