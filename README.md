@@ -6,7 +6,19 @@ Several teams share one cluster. Fairshare decides whose job runs next, enforces
 
 ## Status
 
-**Phase 0: design and spikes.** No application code yet. Design docs live in [`docs/`](docs/).
+**Phase 0: design and spikes.** No application code yet.
+
+## Design docs
+
+| Doc | Covers |
+|---|---|
+| [Product spec](docs/PRODUCT_SPEC.md) | Users, scope, requirements, success criteria |
+| [Architecture](docs/ARCHITECTURE.md) | Components, Kubernetes layout, messaging, runner |
+| [Job lifecycle](docs/JOB_LIFECYCLE.md) | States, transitions, retries, crash behavior |
+| [Scheduling policy](docs/SCHEDULING_POLICY.md) | Fair share, reservations, preemption |
+| [Data model](docs/DATA_MODEL.md) | Postgres tables, constraints, audit hash chain |
+| [API](docs/API.md) | REST endpoints, auth, errors |
+| [ADRs](docs/adr/) | Key decisions and the alternatives rejected |
 
 ## Planned stack
 

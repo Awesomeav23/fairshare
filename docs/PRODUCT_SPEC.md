@@ -138,7 +138,7 @@ A **tenant** is a team (e.g. fraud, marketing, risk).
 - **FR-12** Cancelling a running job stops it within **60 s** and frees its slots.
 
 ### Scheduling and preemption
-- **FR-13** When slots are free, the next job comes from the tenant **furthest below its fair share**. Exact rules: [SCHEDULING_POLICY](SCHEDULING_POLICY.md).
+- **FR-13** When slots are free, the highest-priority waiting job goes first. Among jobs of the same priority, the next job comes from the tenant **furthest below its fair share**. Exact rules: [SCHEDULING_POLICY](SCHEDULING_POLICY.md).
 - **FR-14** Only a job with **strictly higher** priority may preempt another job.
 - **FR-15** Victims are chosen from borrowed slots first, then lowest priority, then most recently started.
 - **FR-16** A job can be preempted at most **2 times**. After that it cannot be preempted.
