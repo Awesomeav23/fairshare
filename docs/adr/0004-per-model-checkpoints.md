@@ -1,6 +1,6 @@
 # ADR-0004: Checkpoint per finished model
 
-**Status:** Accepted, pending Spike B · **Date:** 2026-11-14
+**Status:** Accepted, validated by Spike B · **Date:** 2026-11-14
 
 ## Context
 - Preempted jobs must resume without starting over (FR-18).
@@ -16,16 +16,23 @@
 ## Consequences
 - ✅ Works with H2O as it is. No changes to H2O.
 - ✅ A preemption loses at most the one model in progress.
-- ❌ Resumed AutoML may retrain model *types* already covered, unless we can skip finished steps. Spike B tests the `modeling_plan` parameter for this.
+- ✅ Resume does no duplicate work: the runner passes an explicit `modeling_plan` on every attempt, and on resume removes the finished steps.
+- ❌ StackedEnsemble is excluded, since an ensemble depends on other models.
 - ❌ Saving every model costs some time and storage. Small models are typically a few MB.
 
-## Validation (Spike B)
-Must show:
-1. A model saved from cluster A loads into a new cluster B.
-2. A combined leaderboard can be built from loaded + new models.
-3. AutoML can be told to skip steps already done (nice to have; if not, document the duplicate-type trade-off).
+## Validation (Spike B, 2026-11-14)
+| Check | Result |
+|---|---|
+| Model saved from cluster A loads into new cluster B | ✅ 3/3 models scored on validation data |
+| Combined leaderboard from loaded + new models | ✅ `h2o.make_leaderboard`, 8 models |
+| AutoML skips finished steps | ✅ `modeling_plan` ran exactly the 5 remaining steps |
 
-If (1) or (2) fails, revisit this ADR before Phase 1.
+### How finished steps are identified
+- After a run (or a cancel), the AutoML object's `modeling_steps` lists the steps that ran, in order.
+- The nth saved model of a family (`GBM_n`, `DRF_n`, `XRT_n`, `GLM_n`) came from the nth executed step of that family.
+- Resume plan = full plan − those steps.
+
+Details: [SPIKE_RESULTS §2](../SPIKE_RESULTS.md#2-spike-b-checkpoint-and-resume).
 
 ## Alternatives considered
 | Option | Why not |

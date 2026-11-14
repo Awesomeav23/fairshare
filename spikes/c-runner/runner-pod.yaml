@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: job7-a1-runner
+  labels: {fairshare.io/job-id: "7", fairshare.io/attempt: "1"}
+spec:
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 60
+  automountServiceAccountToken: false
+  containers:
+    - name: runner
+      image: fairshare/runner-spike:0.1
+      imagePullPolicy: Never
+      env:
+        - {name: JOB_ID, value: "7"}
+        - {name: ATTEMPT, value: "1"}
+        - {name: H2O_STATEFULSET, value: spc-h2o}
+        - {name: H2O_DISCOVERY, value: spc-h2o-discovery.fairshare-jobs.svc.cluster.local}
+        - {name: H2O_NODES, value: "2"}
+        - {name: S3_ENDPOINT, value: "http://host.docker.internal:9000"}
+      resources:
+        requests: {cpu: 100m, memory: 256Mi}
+        limits: {memory: 512Mi}

@@ -17,6 +17,7 @@ Several teams share one cluster. Fairshare decides whose job runs next, enforces
 | [Job lifecycle](docs/JOB_LIFECYCLE.md) | States, transitions, retries, crash behavior |
 | [Scheduling policy](docs/SCHEDULING_POLICY.md) | Fair share, reservations, preemption |
 | [Data model](docs/DATA_MODEL.md) | Postgres tables, constraints, audit hash chain |
+| [Spike results](docs/SPIKE_RESULTS.md) | Phase 0 experiments: what was proven, what changed |
 | [API](docs/API.md) | REST endpoints, auth, errors |
 | [ADRs](docs/adr/) | Key decisions and the alternatives rejected |
 

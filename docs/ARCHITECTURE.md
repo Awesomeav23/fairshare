@@ -107,9 +107,12 @@ Each start or resume is a new **attempt** (1, 2, 3…). Resources are named per 
 
 | Resource | Name | Notes |
 |---|---|---|
-| StatefulSet | `job-<id>-a<n>-h2o` | `replicas` = job slots. 1 CPU + 2 GB per pod |
-| Headless Service | `job-<id>-a<n>-h2o` | H2O pods find each other through its DNS |
+| StatefulSet | `job-<id>-a<n>-h2o` | `replicas` = job slots. One slot per pod. `podManagementPolicy: Parallel` |
+| Headless Service | `job-<id>-a<n>-h2o-discovery` | `publishNotReadyAddresses: true`. Used for H2O discovery **and** by the runner to reach each pod |
 | Pod | `job-<id>-a<n>-runner` | `restartPolicy: Never`. Grace period 60 s |
+
+- **No ordinary client Service.** Only the H2O leader is Ready, and non-leaders reject REST calls with 403. While the cloud forms, every pod briefly claims to be leader. So the runner finds the leader itself (§6) instead of trusting a Service ([SPIKE_RESULTS F1, F2](SPIKE_RESULTS.md#4-findings-that-change-the-design)).
+- **JVM heap:** `-XX:MaxRAMPercentage=60`. 70% was OOM-killed because H2O uses significant off-heap memory (F5).
 
 - **Labels** on everything: `fairshare.io/job-id`, `fairshare.io/attempt`, `fairshare.io/tenant`.
 - **Owner references:** the Service and runner Pod are owned by the StatefulSet. Deleting the StatefulSet cleans up all three.
@@ -122,7 +125,9 @@ Each start or resume is a new **attempt** (1, 2, 3…). Resources are named per 
   - `H2O_NODE_EXPECTED_COUNT` = slots
   - `H2O_NODE_LOOKUP_TIMEOUT`
 - Pods resolve each other through the headless Service and form one cloud.
-- **Validated in Spike A.**
+- Readiness probe: `GET /kubernetes/isLeaderNode` on port 8080 (`H2O_KUBERNETES_API_PORT`). Only the leader passes.
+- **Validated in Spike A:** a 2-node cloud forms in ~7 s with the image preloaded.
+- **Once work starts, the cloud is locked.** A replacement pod can't join and crash-loops. A restarted leader comes back as a healthy-looking 1-node cloud with no data. So readiness is **not** a health signal (see §8).
 
 ### Safety nets
 - **ResourceQuota** on `fairshare-jobs` = cluster capacity. Even a scheduler bug can't overcommit the cluster.
@@ -161,12 +166,14 @@ Each start or resume is a new **attempt** (1, 2, 3…). Resources are named per 
 One Python process per job attempt. Libraries: `h2o`, `pika` (RabbitMQ), `boto3` (MinIO).
 
 ### Normal run
-1. Wait for the H2O cluster to report the expected node count.
-2. Download the dataset CSV from MinIO and import it into H2O.
-3. **If attempt > 1:** load finished models from the job's checkpoint folder in MinIO.
+1. **Find the leader:** for each pod `job-<id>-a<n>-h2o-<i>.<discovery service>`, call `:8080/kubernetes/isLeaderNode`. On the pod that answers 200, check `:54321/3/Cloud` until `cloud_size` = expected node count. Connect to that pod. Give up after 4 min.
+2. Download the dataset CSV from object storage, then `h2o.upload_file` it into H2O.
+3. **If attempt > 1:** load finished models from the job's checkpoint folder (`h2o.upload_model`).
 4. Start AutoML with:
+   - an **explicit `modeling_plan`**: the full plan on attempt 1; on resume, the full plan minus finished steps ([ADR-0004](adr/0004-per-model-checkpoints.md))
    - `max_models` = requested − already finished
    - `max_runtime_secs` = requested − runtime already used
+   - StackedEnsemble excluded, so every saved model is independent. XGBoost isn't available on ARM64 or multi-node clusters (SPIKE_RESULTS F6)
 5. A background thread polls the leaderboard every 5 s. For each new model:
    - save the model binary to MinIO
    - send `runner.model_saved`
@@ -177,19 +184,23 @@ One Python process per job attempt. Libraries: `h2o`, `pika` (RabbitMQ), `boto3`
    - send `runner.finished`
 
 ### On SIGTERM (preemption or cancel)
-1. Cancel the running AutoML job through the H2O API.
-2. Save any finished models not yet saved.
-3. Send `runner.checkpointed` with the list of saved models.
-4. Exit 0. All of this must fit in the 60 s grace period.
+1. Set a **hard deadline of 45 s** (grace period is 60 s).
+2. Cancel the running AutoML job through the H2O API.
+3. Save any finished models not yet saved, if the deadline allows.
+4. Write the manifest from what is **already in object storage**, even if H2O is unreachable.
+5. Send `runner.checkpointed` with the saved models and `h2o_reachable`.
+6. Exit 0 with `os._exit`, because H2O client threads can be stuck retrying forever (SPIKE_RESULTS F4).
+
+Measured: 0.3 s normally, 0.7 s with H2O already dead.
 
 ### On error
 - Send `runner.failed` with the reason, then exit non-zero.
 - If the runner dies without sending anything (OOM, node loss), the reconciler sees the failed Pod.
 
-### Open questions for Spike B
-- Can models saved from one H2O cluster be loaded into a new one?
-- Can AutoML skip the steps already done? Option: the `modeling_plan` parameter.
-- Can a combined leaderboard be built from loaded + new models (`h2o.make_leaderboard`)?
+### Spike B answers
+- Models saved from one cluster load into a new one: **yes**.
+- AutoML can skip finished steps via `modeling_plan`: **yes**.
+- `h2o.make_leaderboard` combines loaded + new models: **yes**.
 
 ---
 
@@ -219,7 +230,7 @@ Runs every 30 s on the leader. For each non-final job, compare the expected and 
 |---|---|---|
 | `PROVISIONING` for > 2 min | no resources | Re-emit `job.provision` |
 | `RUNNING` | runner Pod `Failed` or missing | Attempt failed → [JOB_LIFECYCLE](JOB_LIFECYCLE.md) retry rules |
-| `RUNNING` | an H2O pod restarted | H2O cloud is broken → delete attempt → attempt failed |
+| `PROVISIONING` / `RUNNING` | any H2O pod has `restartCount > 0` or is in `CrashLoopBackOff` | H2O cloud is broken → delete attempt → attempt failed. **Readiness is ignored**: a restarted leader looks Ready |
 | `CHECKPOINTING` for > 90 s | runner gone, no `checkpointed` event | Use the last manifest in MinIO → `PREEMPTED` |
 | final state | resources still exist | Delete them (orphans) |
 | *(no job)* | resources with Fairshare labels | Delete them |

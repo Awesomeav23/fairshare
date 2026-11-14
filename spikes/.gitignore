@@ -1,0 +1,4 @@
+.venv/
+h2o-image/h2o.jar
+out/
+*.csv

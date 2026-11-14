@@ -109,6 +109,8 @@ A **tenant** is a team (e.g. fraud, marketing, risk).
 - **Multiple Kubernetes clusters** or node-aware placement.
 - **GPUs.**
 - **Driverless AI or Sparkling Water** support.
+- **XGBoost** in AutoML. H2O has no XGBoost backend on ARM64 or in multi-node clusters ([SPIKE_RESULTS F6](SPIKE_RESULTS.md#4-findings-that-change-the-design)).
+- **StackedEnsemble** models. Ensembles depend on other models, which complicates per-model checkpoints.
 - **Email/Slack notifications.**
 
 ---
